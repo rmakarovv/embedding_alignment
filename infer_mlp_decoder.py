@@ -1,0 +1,101 @@
+import argparse
+import pandas as pd
+import numpy as np
+import torch
+from transformers import AutoTokenizer
+from train_mlp_decoder import MLPDecoderModel
+
+
+def load_projector_weights(model, path, device):
+    state = torch.load(path, map_location=device)
+    if isinstance(state, dict) and "projector_state_dict" in state:
+        state = state["projector_state_dict"]
+    model.projector.load_state_dict(state)
+
+
+def generate_from_embedding(model, tokenizer, embedding_tensor, max_new_tokens, do_sample, temperature, top_p):
+    model.eval()
+    with torch.no_grad():
+        soft_tokens = model.projector(embedding_tensor).to(model.decoder.dtype)
+        attention_prefix = torch.ones(
+            soft_tokens.shape[0], soft_tokens.shape[1], dtype=torch.long, device=soft_tokens.device
+        )
+        pos = torch.arange(soft_tokens.size(1), device=soft_tokens.device).unsqueeze(0).expand(soft_tokens.size(0), -1)
+
+        outputs = model.decoder.generate(
+            inputs_embeds=soft_tokens,
+            attention_mask=attention_prefix,
+            position_ids=pos,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            temperature=temperature,
+            top_p=top_p,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+
+def main(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    tokenizer = AutoTokenizer.from_pretrained(args.decoder_name)
+    tokenizer.padding_side = "right"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    model = MLPDecoderModel(
+        decoder_name=args.decoder_name,
+        emb_dim=args.emb_dim,
+        hidden_dim=args.hidden_dim,
+        num_soft_tokens=args.num_soft_tokens,
+        model_dtype=model_dtype,
+    ).to(device)
+
+    load_projector_weights(model, args.projector_path, device)
+
+    df = pd.read_csv(args.test_csv)
+    num_samples = min(args.num_samples, len(df))
+
+    with open(args.output_log, "w", encoding="utf-8") as f:
+        for i in range(num_samples):
+            row = df.iloc[i]
+            initial_text = row["dialogue"]
+            embedding = np.fromstring(str(row["embedding"]).strip("[]"), sep=" ")
+            emb_tensor = torch.tensor(embedding, dtype=torch.float32, device=device).unsqueeze(0)
+
+            generated_text = generate_from_embedding(
+                model,
+                tokenizer,
+                emb_tensor,
+                max_new_tokens=args.max_new_tokens,
+                do_sample=args.do_sample,
+                temperature=args.temperature,
+                top_p=args.top_p,
+            )
+
+            entry = f"Initial text:\n{initial_text}\n\nGenerated text:\n{generated_text}\n\n\n"
+            f.write(entry)
+            print(entry, end="")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test_csv", type=str, default="embds_data/test.csv")
+    parser.add_argument("--decoder_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct")
+    parser.add_argument("--projector_path", type=str, default="outputs/mlp_projector_final.pt")
+    parser.add_argument("--output_log", type=str, default="outputs/infer_log.txt")
+    parser.add_argument("--emb_dim", type=int, default=768)
+    parser.add_argument("--hidden_dim", type=int, default=2048)
+    parser.add_argument("--num_soft_tokens", type=int, default=8)
+    parser.add_argument("--num_samples", type=int, default=5)
+    parser.add_argument("--max_new_tokens", type=int, default=128)
+    parser.add_argument("--do_sample", action="store_true")
+    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--top_p", type=float, default=0.9)
+    args = parser.parse_args()
+    main(args)
+
+
