@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModel, DataCollatorWithPadding
 from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -25,41 +25,45 @@ class EmbeddingDataset(Dataset):
         dialogue = row["dialogue"]
         embedding = np.fromstring(row["embedding"].strip("[]"), sep=" ")
 
-        return {
-            "dialogue": dialogue,
-            "embedding": embedding.astype(np.float32),
-        }
-
-
-def make_collate_fn(tokenizer, max_length: int = 512):
-    def collate(batch):
-        dialogues = [b.get("dialogue", "") if isinstance(b.get("dialogue", ""), str) else "" for b in batch]
-
-        embeddings_np = np.stack([b["embedding"] for b in batch], axis=0)
-        embeddings = torch.tensor(embeddings_np, dtype=torch.float32)
-
-        enc = tokenizer(
-            dialogues,
-            padding="longest",
+        tokens = self.tokenizer(
+            dialogue,
             truncation=True,
-            max_length=max_length,
-            return_tensors="pt",
+            max_length=self.max_length,
         )
 
         return {
-            "embedding": embeddings,
-            "input_ids": enc["input_ids"],
-            "attention_mask": enc["attention_mask"],
+            "embedding": torch.tensor(embedding, dtype=torch.float32),
+            "input_ids": tokens["input_ids"],
+            "attention_mask": tokens["attention_mask"],
         }
 
-    return collate
+
+# class MLPProjector(nn.Module):
+#     def __init__(self, input_dim=768, hidden_dim=2048, output_dim=1536, num_tokens=8):
+#         super().__init__()
+#         self.num_tokens = num_tokens
+#         self.output_dim = output_dim
+#         self.mlp = nn.Sequential(
+#             nn.Linear(input_dim, hidden_dim),
+#             nn.GELU(),
+#             nn.Linear(hidden_dim, hidden_dim),
+#             nn.GELU(),
+#             nn.Linear(hidden_dim, num_tokens * output_dim),
+#         )
+
+#     def forward(self, embeddings):
+#         batch_size = embeddings.shape[0]
+#         projected = self.mlp(embeddings)
+#         soft_tokens = projected.view(batch_size, self.num_tokens, self.output_dim)
+#         return soft_tokens
 
 
 class MLPProjector(nn.Module):
-    def __init__(self, input_dim=768, hidden_dim=2048, output_dim=1536, num_tokens=8):
+    def __init__(self, input_dim=768, hidden_dim=2048, output_dim=1536, num_tokens=16):
         super().__init__()
         self.num_tokens = num_tokens
         self.output_dim = output_dim
+        self.alpha = nn.Parameter(torch.tensor(1.0))
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.GELU(),
@@ -67,12 +71,12 @@ class MLPProjector(nn.Module):
             nn.GELU(),
             nn.Linear(hidden_dim, num_tokens * output_dim),
         )
+        self.ln = nn.LayerNorm(output_dim)
 
     def forward(self, embeddings):
-        batch_size = embeddings.shape[0]
-        projected = self.mlp(embeddings)
-        soft_tokens = projected.view(batch_size, self.num_tokens, self.output_dim)
-        return soft_tokens
+        e = torch.nn.functional.normalize(embeddings, dim=-1) * self.alpha
+        projected = self.mlp(e).view(-1, self.num_tokens, self.output_dim)
+        return self.ln(projected)
 
 
 class MLPDecoderModel(nn.Module):
@@ -85,14 +89,9 @@ class MLPDecoderModel(nn.Module):
         model_dtype=torch.float16,
     ):
         super().__init__()
-        try:
-            self.decoder = AutoModelForCausalLM.from_pretrained(
-                decoder_name, torch_dtype=model_dtype, attn_implementation="flash_attention_2"
-            ).eval()
-        except Exception:
-            self.decoder = AutoModelForCausalLM.from_pretrained(
-                decoder_name, torch_dtype=model_dtype
-            ).eval()
+        self.decoder = AutoModelForCausalLM.from_pretrained(
+            decoder_name, torch_dtype=model_dtype
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(decoder_name)
         for param in self.decoder.parameters():
             param.requires_grad = False
@@ -103,7 +102,8 @@ class MLPDecoderModel(nn.Module):
 
     def forward(self, embeddings, input_ids, attention_mask, sentence=False):
         soft_tokens = self.projector(embeddings).to(self.decoder.dtype)
-        inputs_embeds = self.decoder.get_input_embeddings()(input_ids).detach()
+
+        inputs_embeds = self.decoder.get_input_embeddings()(input_ids)
         combined_embeds = torch.cat([soft_tokens, inputs_embeds], dim=1)
 
         soft_attention = torch.ones(
@@ -194,9 +194,9 @@ def eval_epoch(model, dataloader, device, rubert_tokenizer, rubert_model):
                 break
             batch_idx += 1
 
-            embeddings = batch["embedding"].to(device)
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
+            embeddings = batch["embedding"].to(device, non_blocking=True)
+            input_ids = batch["input_ids"].to(device, non_blocking=True)
+            attention_mask = batch["attention_mask"].to(device, non_blocking=True)
 
             outputs = model(embeddings, input_ids, attention_mask, sentence=True)
 
@@ -220,13 +220,28 @@ def main(args):
         tokenizer.pad_token = tokenizer.eos_token
 
     train_dataset = EmbeddingDataset(args.train_csv, tokenizer, args.max_length)
+
+    pad_collator = DataCollatorWithPadding(tokenizer, padding=True)
+
+    def collate_with_embeddings(examples):
+        embeddings = [ex["embedding"] for ex in examples]
+        embeddings = torch.stack([
+            e if torch.is_tensor(e) else torch.tensor(e, dtype=torch.float32) for e in embeddings
+        ])
+        token_features = [{k: v for k, v in ex.items() if k != "embedding"} for ex in examples]
+        batch = pad_collator(token_features)
+        batch["embedding"] = embeddings
+        return batch
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=8,
         pin_memory=True,
-        collate_fn=make_collate_fn(tokenizer, args.max_length),
+        prefetch_factor=2,
+        persistent_workers=True,
+        collate_fn=collate_with_embeddings,
     )
 
     eval_dataset = EmbeddingDataset(args.eval_csv, tokenizer, args.max_length)
@@ -236,7 +251,9 @@ def main(args):
         shuffle=False,
         num_workers=8,
         pin_memory=True,
-        collate_fn=make_collate_fn(tokenizer, args.max_length),
+        prefetch_factor=2,
+        persistent_workers=True,
+        collate_fn=collate_with_embeddings,
     )
 
     model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -256,7 +273,7 @@ def main(args):
 
     rubert_tokenizer = AutoTokenizer.from_pretrained(args.rubert_name)
     rubert_model = AutoModel.from_pretrained(args.rubert_name)
-    rubert_model = rubert_model.to(device).eval()
+    rubert_model = rubert_model.to(device)
 
     for epoch in range(args.epochs):
         train_loss = train_epoch(model, train_loader, optimizer, device)
@@ -272,15 +289,16 @@ def main(args):
                 },
                 f"{args.output_dir}/checkpoint_epoch_{epoch+1}.pt",
             )
-
-        eval_cosine_similarity = eval_epoch(
-            model, eval_loader, device, rubert_tokenizer, rubert_model
-        )
-        print(
-            f"Epoch {epoch+1}/{args.epochs}, Cosine Similarity: {eval_cosine_similarity:.4f}"
-        )
-        with open("eval_cosine_similarity.txt", "a") as f:
-            f.write(f"{epoch+1}, {eval_cosine_similarity:.4f}\n")
+        
+        if epoch % 2 == 0:
+            eval_cosine_similarity = eval_epoch(
+                model, eval_loader, device, rubert_tokenizer, rubert_model
+            )
+            print(
+                f"Epoch {epoch+1}/{args.epochs}, Cosine Similarity: {eval_cosine_similarity:.4f}"
+            )
+            with open("eval_cosine_similarity.txt", "a") as f:
+                f.write(f"{epoch+1}, {eval_cosine_similarity:.4f}\n")
 
     torch.save(
         model.projector.state_dict(), f"{args.output_dir}/mlp_projector_final.pt"

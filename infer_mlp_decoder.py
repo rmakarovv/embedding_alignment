@@ -20,12 +20,10 @@ def generate_from_embedding(model, tokenizer, embedding_tensor, max_new_tokens, 
         attention_prefix = torch.ones(
             soft_tokens.shape[0], soft_tokens.shape[1], dtype=torch.long, device=soft_tokens.device
         )
-        pos = torch.arange(soft_tokens.size(1), device=soft_tokens.device).unsqueeze(0).expand(soft_tokens.size(0), -1)
 
         outputs = model.decoder.generate(
             inputs_embeds=soft_tokens,
             attention_mask=attention_prefix,
-            position_ids=pos,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
             temperature=temperature,
@@ -89,7 +87,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_log", type=str, default="outputs/infer_log.txt")
     parser.add_argument("--emb_dim", type=int, default=768)
     parser.add_argument("--hidden_dim", type=int, default=2048)
-    parser.add_argument("--num_soft_tokens", type=int, default=8)
+    parser.add_argument("--num_soft_tokens", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=5)
     parser.add_argument("--max_new_tokens", type=int, default=128)
     parser.add_argument("--do_sample", action="store_true")
