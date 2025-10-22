@@ -1,0 +1,72 @@
+[
+    {
+        "target": "aishwarya's father krishnaraj rai's funeral held, celebs pay last respects. actress aishwarya rai bachchan's",
+        "generation": "Ahimsadb said goodbye her father.\nBaba Kali's funeral.\n\nDressed to raim,\nCai Hes was an Indian actor during and had",
+        "cos_sim": 0.9133845567703247,
+        "naturalness": 0.0,
+        "bleu_score": 0.2950828639615005,
+        "beam_width": 30,
+        "max_steps": 32,
+        "top_k": 30,
+        "top_p": 1.0,
+        "repetition_penalty": 1.5,
+        "encoder_name": "gte",
+        "noise_level": 0
+    },
+    {
+        "target": "pnc bank routing numbers. find pnc bank check routing numbers, also referred to as aba routing numbers, or routing transit numbers. routing numbers are nine digit",
+        "generation": "Of cabbabus or CCBTCs with no \"p.\"\n\nSorry if those numbers don\\u9FDBNb seem to go anywhere nC",
+        "cos_sim": 0.8859583139419556,
+        "naturalness": 0.0,
+        "bleu_score": 0.11953229213476049,
+        "beam_width": 30,
+        "max_steps": 32,
+        "top_k": 30,
+        "top_p": 1.0,
+        "repetition_penalty": 1.5,
+        "encoder_name": "gte",
+        "noise_level": 0
+    },
+    {
+        "target": "the national flag of japan is a white rectangular flag with a large red disc ( representing the sun ) in the center. this flag is officially called nissho",
+        "generation": "Okay\uff0ca traditional Japanese shinkin.\nThere stands Nissho at sunset\uff1awhite with red stripes that symbolizers Japan like on flags as this flag",
+        "cos_sim": 0.9407840967178345,
+        "naturalness": 0.0,
+        "bleu_score": 0.3499374445766373,
+        "beam_width": 30,
+        "max_steps": 32,
+        "top_k": 30,
+        "top_p": 1.0,
+        "repetition_penalty": 1.5,
+        "encoder_name": "gte",
+        "noise_level": 0
+    },
+    {
+        "target": "1 * the latest sxs device driver is required for all software functions to operate properly. * 2 when using the sony sxs memory card usb reader",
+        "generation": "Am using an external device such s camera and audio card.\n1: It has only USB devices available because usb drivers must comply into x.x specification before new version",
+        "cos_sim": 0.9304778575897217,
+        "naturalness": 0.0,
+        "bleu_score": 0.28176304675043395,
+        "beam_width": 30,
+        "max_steps": 32,
+        "top_k": 30,
+        "top_p": 1.0,
+        "repetition_penalty": 1.5,
+        "encoder_name": "gte",
+        "noise_level": 0
+    },
+    {
+        "target": "dile = drug - induced lupus erythematosus, igg = immunoglobulin g ; sle = systemic lupus er",
+        "generation": "Eyes dilatsin.\nLumipus imed is sre in gnaq nke ige.\n\n- Lupe: What?\nRic",
+        "cos_sim": 0.9092974662780762,
+        "naturalness": 0.0,
+        "bleu_score": 0.1337774484149687,
+        "beam_width": 30,
+        "max_steps": 32,
+        "top_k": 30,
+        "top_p": 1.0,
+        "repetition_penalty": 1.5,
+        "encoder_name": "gte",
+        "noise_level": 0
+    }
+]
