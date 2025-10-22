@@ -1,18 +1,17 @@
 import argparse
-import os
-import json
 import ast
+import json
+import os
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.cache_utils import DynamicCache
-from peft import LoraConfig, get_peft_model
-
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -138,7 +137,8 @@ class KVPrefixModel(nn.Module):
 
         if use_lora:
             if lora_target_modules is None or (
-                isinstance(lora_target_modules, (list, tuple)) and len(lora_target_modules) == 0
+                isinstance(lora_target_modules, (list, tuple))
+                and len(lora_target_modules) == 0
             ):
                 lora_target_modules = [
                     "q_proj",
@@ -150,7 +150,9 @@ class KVPrefixModel(nn.Module):
                     "down_proj",
                 ]
             if isinstance(lora_target_modules, str):
-                lora_target_modules = [m.strip() for m in lora_target_modules.split(",") if m.strip()]
+                lora_target_modules = [
+                    m.strip() for m in lora_target_modules.split(",") if m.strip()
+                ]
             lconf = LoraConfig(
                 r=lora_r,
                 lora_alpha=lora_alpha,
@@ -164,12 +166,18 @@ class KVPrefixModel(nn.Module):
                 p.requires_grad = False
 
         config = self.decoder.config
-        num_layers = getattr(config, "num_hidden_layers", getattr(config, "n_layer", None))
-        num_attn_heads = getattr(config, "num_attention_heads", getattr(config, "n_head", None))
+        num_layers = getattr(
+            config, "num_hidden_layers", getattr(config, "n_layer", None)
+        )
+        num_attn_heads = getattr(
+            config, "num_attention_heads", getattr(config, "n_head", None)
+        )
         num_kv_heads = getattr(config, "num_key_value_heads", num_attn_heads)
         hidden_size = getattr(config, "hidden_size", getattr(config, "n_embd", None))
         if num_layers is None or num_attn_heads is None or hidden_size is None:
-            raise ValueError("Unsupported model config; missing heads/layers/hidden_size")
+            raise ValueError(
+                "Unsupported model config; missing heads/layers/hidden_size"
+            )
         head_dim = hidden_size // num_attn_heads
 
         self.projector = KVProjector(
@@ -192,7 +200,11 @@ class KVPrefixModel(nn.Module):
 
         bsz, L = input_ids.shape
         past_len = self.num_kv_tokens
-        pos = torch.arange(past_len, past_len + L, device=input_ids.device).unsqueeze(0).expand(bsz, -1)
+        pos = (
+            torch.arange(past_len, past_len + L, device=input_ids.device)
+            .unsqueeze(0)
+            .expand(bsz, -1)
+        )
         cache_position = torch.arange(past_len, past_len + L, device=input_ids.device)
 
         masked_labels = input_ids.masked_fill(attention_mask == 0, -100)
@@ -237,7 +249,13 @@ def main(args):
         tokenizer.pad_token = tokenizer.eos_token
 
     dataset = EmbeddingToTextDataset(args.train_csv, tokenizer, args.max_target_length)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    loader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+    )
 
     model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     model = KVPrefixModel(
@@ -288,7 +306,9 @@ def main(args):
         f.write("--------------------------------\n")
 
     if args.use_lora:
-        lora_dir = args.lora_adapter_dir or os.path.join(args.output_dir, "lora_adapter")
+        lora_dir = args.lora_adapter_dir or os.path.join(
+            args.output_dir, "lora_adapter"
+        )
         os.makedirs(lora_dir, exist_ok=True)
         model.decoder.save_pretrained(lora_dir)
 
@@ -296,7 +316,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_csv", type=str, default="embds_data/train.csv")
-    parser.add_argument("--decoder_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct")
+    parser.add_argument(
+        "--decoder_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct"
+    )
     parser.add_argument("--output_dir", type=str, default="outputs_kv_prefix")
     parser.add_argument("--emb_dim", type=int, default=768)
     parser.add_argument("--hidden_dim", type=int, default=2048)
@@ -316,7 +338,12 @@ if __name__ == "__main__":
         default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
         help="Comma-separated list of target module names for LoRA",
     )
-    parser.add_argument("--lora_adapter_dir", type=str, default="", help="Path to trained LoRA adapter directory")
+    parser.add_argument(
+        "--lora_adapter_dir",
+        type=str,
+        default="",
+        help="Path to trained LoRA adapter directory",
+    )
 
     args = parser.parse_args()
     main(args)

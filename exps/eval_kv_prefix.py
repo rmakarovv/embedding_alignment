@@ -1,12 +1,13 @@
 import argparse
-import os
-import json
 import ast
-import pandas as pd
+import json
+import os
+
 import numpy as np
+import pandas as pd
 import torch
-from transformers import AutoTokenizer
 from peft import PeftModel
+from transformers import AutoTokenizer
 from transformers.cache_utils import DynamicCache
 
 from train_kv_prefix import KVPrefixModel
@@ -37,7 +38,9 @@ def load_projector_weights(model, path, device):
     model.projector.load_state_dict(state)
 
 
-def generate_from_embedding(model, tokenizer, embedding_tensor, max_new_tokens, do_sample, temperature, top_p):
+def generate_from_embedding(
+    model, tokenizer, embedding_tensor, max_new_tokens, do_sample, temperature, top_p
+):
     model.eval()
     with torch.no_grad():
         past_key_values = model.projector(embedding_tensor)
@@ -50,12 +53,20 @@ def generate_from_embedding(model, tokenizer, embedding_tensor, max_new_tokens, 
         start_pos = getattr(model, "num_kv_tokens", pkv[0][0].shape[2])
         input_ids = torch.full(
             (bsz, 1),
-            tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
+            (
+                tokenizer.bos_token_id
+                if tokenizer.bos_token_id is not None
+                else tokenizer.eos_token_id
+            ),
             device=embedding_tensor.device,
             dtype=torch.long,
         )
-        attention_mask = torch.ones((bsz, 1), dtype=torch.long, device=embedding_tensor.device)
-        cache_position = torch.arange(start_pos, start_pos + input_ids.shape[1], device=embedding_tensor.device)
+        attention_mask = torch.ones(
+            (bsz, 1), dtype=torch.long, device=embedding_tensor.device
+        )
+        cache_position = torch.arange(
+            start_pos, start_pos + input_ids.shape[1], device=embedding_tensor.device
+        )
 
         outputs = model.decoder.generate(
             input_ids=input_ids,
@@ -92,7 +103,9 @@ def main(args):
     ).to(device)
 
     if args.lora_adapter_dir and os.path.isdir(args.lora_adapter_dir):
-        model.decoder = PeftModel.from_pretrained(model.decoder, args.lora_adapter_dir).to(device)
+        model.decoder = PeftModel.from_pretrained(
+            model.decoder, args.lora_adapter_dir
+        ).to(device)
 
     load_projector_weights(model, args.projector_path, device)
 
@@ -104,9 +117,11 @@ def main(args):
         for i in range(num_samples):
             row = df.iloc[i]
             initial_text = row["dialogue"]
-            embedding = _parse_embedding_to_np(row["embedding"]) 
+            embedding = _parse_embedding_to_np(row["embedding"])
 
-            emb_tensor = torch.tensor(embedding, dtype=torch.float32, device=device).unsqueeze(0)
+            emb_tensor = torch.tensor(
+                embedding, dtype=torch.float32, device=device
+            ).unsqueeze(0)
 
             generated_text = generate_from_embedding(
                 model,
@@ -126,8 +141,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--test_csv", type=str, default="embds_data/test.csv")
-    parser.add_argument("--decoder_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct")
-    parser.add_argument("--projector_path", type=str, default="outputs_kv_prefix/kv_projector_final.pt")
+    parser.add_argument(
+        "--decoder_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct"
+    )
+    parser.add_argument(
+        "--projector_path", type=str, default="outputs_kv_prefix/kv_projector_final.pt"
+    )
     parser.add_argument("--output_log", type=str, default="infer_kv_prefix.txt")
     parser.add_argument("--emb_dim", type=int, default=768)
     parser.add_argument("--hidden_dim", type=int, default=2048)
@@ -138,8 +157,11 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--use_lora", action="store_true")
-    parser.add_argument("--lora_adapter_dir", type=str, default="outputs_kv_prefix/lora_adapter", help="Path to trained LoRA adapter directory")
+    parser.add_argument(
+        "--lora_adapter_dir",
+        type=str,
+        default="outputs_kv_prefix/lora_adapter",
+        help="Path to trained LoRA adapter directory",
+    )
     args = parser.parse_args()
     main(args)
-
-

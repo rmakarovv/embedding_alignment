@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from peft import PeftModel
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoModel, AutoTokenizer
 
 from train_soft_tokens import MLPDecoderModel
 
@@ -112,7 +112,6 @@ def main(args):
                 top_p=args.top_p,
             )
 
-
             rubert_tokenizer = AutoTokenizer.from_pretrained("ai-forever/ruBert-base")
             rubert = AutoModel.from_pretrained("ai-forever/ruBert-base").to(device)
             rubert.eval()
@@ -133,19 +132,23 @@ def main(args):
             )
 
             enc_initial_text = {k: v.to(device) for k, v in enc_initial_text.items()}
-            enc_generated_text = {k: v.to(device) for k, v in enc_generated_text.items()}
+            enc_generated_text = {
+                k: v.to(device) for k, v in enc_generated_text.items()
+            }
             with torch.no_grad():
                 out_initial_text = rubert(**enc_initial_text, return_dict=True)
                 out_generated_text = rubert(**enc_generated_text, return_dict=True)
                 initial_text_embedding = out_initial_text.last_hidden_state[:, 0, :]
                 generated_text_embedding = out_generated_text.last_hidden_state[:, 0, :]
-                cosine_similarity = torch.nn.functional.cosine_similarity(initial_text_embedding, generated_text_embedding, dim=-1).item()
+                cosine_similarity = torch.nn.functional.cosine_similarity(
+                    initial_text_embedding, generated_text_embedding, dim=-1
+                ).item()
                 cosine_similarities.append(cosine_similarity)
                 entry = f"Initial text:\n{initial_text}\n\nGenerated text:\n{generated_text}\n\nCosine similarity: {cosine_similarity}\n\n\n"
-                
+
             f.write(entry)
             print(entry, end="\n\n\n")
-        
+
         f.write(f"Average cosine similarity: {np.mean(cosine_similarities)}\n")
 
 
