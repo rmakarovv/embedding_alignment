@@ -1,20 +1,15 @@
 import argparse
-# --- macOS / MPS safety patch ---
 import os, torch
 
-# Выключаем избыточные потоки
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
-# Безопасный multiprocessing для macOS
 import torch.multiprocessing as mp
 mp.set_start_method("spawn", force=True)
 
-# Заглушка для отсутствующего CUDA
 if not torch.cuda.is_available():
     torch.cuda.synchronize = lambda: None
-# --- end patch ---
 
 def main():
     """
