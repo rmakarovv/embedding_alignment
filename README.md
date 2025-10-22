@@ -1,4 +1,4 @@
-# embedding_alignment
+# Embedding Inversion for Russian Dialogues
 
 ## Setup
 
