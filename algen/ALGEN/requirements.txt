@@ -1,0 +1,19 @@
+transformers
+plac
+pandas
+nltk
+datasets
+jupyterlab
+evaluate
+scikit-learn
+tiktoken
+sentencepiece
+protobuf
+wandb
+tenacity
+# manifest
+gensim
+pot
+wandb
+rouge-score
+dotenv
