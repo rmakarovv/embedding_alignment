@@ -61,7 +61,7 @@ def emb_inv_experiment(should_natural=False, encoder_name='gte', beam_width=5, m
     elif encoder_name == 'contriever':
         encoder = NoisyEncoder("facebook/contriever", device=file_device)
     elif encoder_name == 'rubert':
-        encoder = NoisyEncoder("DeepPavlov/rubert-base-cased-sentence", device=file_device)
+        encoder = NoisyEncoder("abragin/ruBert-style-base", device=file_device)
     
     # Initialize decoding strategy
     attack = EmbInvDecoding(
