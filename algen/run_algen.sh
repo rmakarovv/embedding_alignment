@@ -38,5 +38,5 @@ if [ -n "${training_mode}" ]; then
     args+=( --training_mode "$training_mode" )
 fi
 
-python /root/embedding_alignment/ALGEN/src/exp.py \
+python ./ALGEN/src/exp.py \
     "${args[@]}"
