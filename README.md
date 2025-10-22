@@ -27,7 +27,7 @@ cd algen
 ./run_algen.sh
 ```
 
-### zsinvert
+### ZSInvert
 
 ```bash
 cd zsinvert
